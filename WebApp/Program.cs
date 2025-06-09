@@ -9,11 +9,6 @@ var app = builder.Build();
 
 app.Run(async (HttpContext context) =>
 {
-    //foreach(var key in context.Request.Query.Keys)
-    //{
-    //    await context.Response.WriteAsync($"{key}: {context.Request.Query[key]}\r\n");
-    //}
-    //await context.Response.WriteAsync(context.Request.QueryString.ToString());
 
     if (context.Request.Path.StartsWithSegments("/"))
     {
