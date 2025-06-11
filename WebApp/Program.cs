@@ -1,7 +1,3 @@
-using Microsoft.AspNetCore.Components;
-using Microsoft.AspNetCore.DataProtection.KeyManagement;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Identity;
 using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -10,26 +6,63 @@ var app = builder.Build();
 app.Run(async (HttpContext context) =>
 {
 
+
     if (context.Request.Path.StartsWithSegments("/"))
     {
-        await context.Response.WriteAsync($"The method is: {context.Request.Method}\r\n");
-        await context.Response.WriteAsync($"The Url is: {context.Request.Path}\r\n");
 
-        await context.Response.WriteAsync($"\r\nHeaders:\r\n");
+        context.Response.Headers["Content-Type"] = "text/html";
+
+        await context.Response.WriteAsync($"The method is: {context.Request.Method}<br/>");
+        await context.Response.WriteAsync($"The Url is: {context.Request.Path}<br/>");
+
+        await context.Response.WriteAsync($"<b>Headers</b>:<br/>");
+
+        await context.Response.WriteAsync($"<ul>");
         foreach (var key in context.Request.Headers.Keys)
         {
-            await context.Response.WriteAsync($"{key}: {context.Request.Headers[key]}\r\n");
+            await context.Response.WriteAsync($"<li><b>{key}</b>: {context.Request.Headers[key]}</li>");
         }
+        await context.Response.WriteAsync($"</ul>");
     }
     else if (context.Request.Path.StartsWithSegments("/employees"))
     {
+
         if (context.Request.Method == "GET")
         {
-            var employees = EmployeesRepository.GetEmployees();
-
-            foreach (var employee in employees)
+            if (context.Request.Query.ContainsKey("id"))
             {
-                await context.Response.WriteAsync($"{employee.Name}: {employee.Position}\r\n");
+                var id = context.Request.Query["id"];
+                if (int.TryParse(id, out int employeeId))
+                {
+                    // Get a particular employee's info
+                    var employee = EmployeesRepository.GetEmployeeById(employeeId);
+
+                    context.Response.ContentType = "text/html";
+
+                    if(employee is not null)
+                    {
+                        await context.Response.WriteAsync($"Name: {employee.Name}</br>");
+                        await context.Response.WriteAsync($"Position: {employee.Position}</br>");
+                        await context.Response.WriteAsync($"Salary: {employee.Salary}</br>");
+                    }
+                    else
+                    {
+                        context.Response.StatusCode = 4004;
+                        await context.Response.WriteAsync("Employee not found");
+                    }
+                }
+            }
+            else
+            {
+                // Get all of the emplpoyees' info
+                var employees = EmployeesRepository.GetEmployees();
+                await context.Response.WriteAsync("<ul>");
+                foreach (var employee in employees)
+                {
+                    await context.Response.WriteAsync($"<li><b>{employee.Name}</b>: {employee.Position}</li>");
+                }
+                await context.Response.WriteAsync("<ul>");
+                //context.Response.StatusCode = 200;
             }
 
         }
@@ -39,10 +72,27 @@ app.Run(async (HttpContext context) =>
             using var reader = new StreamReader(context.Request.Body);
             var body = await reader.ReadToEndAsync();
 
-            var employee = JsonSerializer.Deserialize<Employee>(body);
+            try
+            {
+                var employee = JsonSerializer.Deserialize<Employee>(body);
 
-            EmployeesRepository.AddEmployee(employee);
-            
+                if (employee is null || employee.Id <= 0)
+                {
+                    context.Response.StatusCode = 400;
+                    return;
+                }
+                EmployeesRepository.AddEmployee(employee);
+
+                context.Response.StatusCode = 201;
+                await context.Response.WriteAsync("Employee added successfully");
+            }
+            catch(Exception ex)
+            {
+                context.Response.StatusCode = 400;
+                await context.Response.WriteAsync(ex.ToString());
+                return;
+            }
+
         }
         else if (context.Request.Method == "PUT")
         {
@@ -55,12 +105,16 @@ app.Run(async (HttpContext context) =>
 
             if (result)
             {
+                //context.Response.StatusCode = 204;
                 await context.Response.WriteAsync("Employee updated successfully.");
+                return;
             }
             else
             {
                 await context.Response.WriteAsync("Employee not found.");
             }
+
+
         }
 
         else if (context.Request.Method == "DELETE")
@@ -81,17 +135,27 @@ app.Run(async (HttpContext context) =>
                         }
                         else
                         {
+                            context.Response.StatusCode = 404;
                             await context.Response.WriteAsync("Employee not found.");
                         }
                     }
                     else
                     {
+                        context.Response.StatusCode = 401;
                         await context.Response.WriteAsync("You are not authorized to delete.");
                     }
                 }
             }
 
         }
+    }
+    else if(context.Request.Path.StartsWithSegments("/redirection"))
+    {
+        context.Response.Redirect("/employees");
+    }
+    else
+    {
+        context.Response.StatusCode = 404;
     }
 
 });
@@ -110,9 +174,14 @@ static class EmployeesRepository
 
     public static List<Employee> GetEmployees() => employees;
 
+    public static Employee? GetEmployeeById(int id)
+    {
+        return employees.FirstOrDefault(x => x.Id == id);
+    }
+
     public static void AddEmployee(Employee? employee)
     {
-        if(employee is not null)
+        if (employee is not null)
         {
             employees.Add(employee);
         }
@@ -120,11 +189,11 @@ static class EmployeesRepository
 
     public static bool UpdateEmployee(Employee? employee)
     {
-        if(employee is not null)
+        if (employee is not null)
         {
             var emp = employees.FirstOrDefault(x => x.Id == employee.Id);
 
-            if(emp is not null)
+            if (emp is not null)
             {
                 emp.Name = employee.Name;
                 emp.Position = employee.Position;
@@ -141,7 +210,7 @@ static class EmployeesRepository
     {
 
         var employee = employees.FirstOrDefault(x => x.Id == id);
-        if(employee is not null)
+        if (employee is not null)
         {
             employees.Remove(employee);
 
